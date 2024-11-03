@@ -1,0 +1,27 @@
+# Keep test files, ignore test artifacts
+__pycache__/
+*.pyc
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+.hypothesis/
+
+# Test data/fixtures
+test/data/*
+!test/data/.gitkeep
+**/test_credentials.json
+**/test_config.local.yml
+
+# Test reports
+test-reports/
+coverage-reports/
+junit-reports/
+
+# Keep test_auto_sort.py in Git
+# Ignore temporary test files
+test_downloads/
+test_organized/
+.pytest_cache/
+__pycache__/

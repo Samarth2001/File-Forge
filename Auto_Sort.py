@@ -183,19 +183,20 @@ class FileOrganizer(FileSystemEventHandler):
             if current_size > 10_000_000:  # 10MB
                 time.sleep(2)
 
-            # Rest of your existing code...
+            # Get file category
             file_extension = os.path.splitext(event.src_path)[1].lower()
             category = "Others"
-
             for folder, extensions in self.file_types.items():
                 if file_extension in extensions:
                     category = folder
                     break
 
+            # Create destination path
             dest_dir = os.path.join(self.destination_base_dir, category)
             filename = os.path.basename(event.src_path)
             dest_path = os.path.join(dest_dir, filename)
 
+            # Handle duplicate filenames with counter
             base_name, ext = os.path.splitext(filename)
             counter = 1
             while os.path.exists(dest_path):
@@ -203,9 +204,10 @@ class FileOrganizer(FileSystemEventHandler):
                 dest_path = os.path.join(dest_dir, new_name)
                 counter += 1
 
+            # Ensure source file still exists and move it
             if os.path.exists(event.src_path):
                 shutil.move(event.src_path, dest_path)
-                self.processed_files.add(event.src_path)
+                self.processed_files.add(dest_path)  # Store the destination path
                 logging.info(f"Moved {filename} to {category} folder")
 
         except Exception as e:
