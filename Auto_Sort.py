@@ -1,102 +1,156 @@
 import os
 import time
-import logging
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 import shutil
-import yaml
-import argparse
+import logging
+from pathlib import Path
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
+)
 
 
-# create a class that will handle the download
-class DownloadHandler(FileSystemEventHandler):
+class FileOrganizer(FileSystemEventHandler):
+    def __init__(self, monitored_dirs, destination_base_dir):
+        self.monitored_dirs = monitored_dirs
+        self.destination_base_dir = destination_base_dir
+        self.file_types = {
+            "Images": [".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp"],
+            "Documents": [".pdf", ".doc", ".docx", ".txt", ".xlsx", ".pptx"],
+            "Videos": [".mp4", ".mkv", ".avi", ".mov"],
+            "Audio": [".mp3", ".wav", ".flac", ".m4a"],
+            "Archives": [".zip", ".rar", ".7z", ".tar", ".gz"],
+        }
 
-    def __init__(
-        self,
-        source_directory,
-        destination_directory,
-        move_unknown_files,
-        unknown_files_directory=None,
-        auto_create_dir=False,
-    ):  # initialize the class
-        self.source_directory = source_directory
-        self.destination_directory = destination_directory
-        self.move_unknown_files = move_unknown_files
-        self.unknown_files_directory = unknown_files_directory
-        self.auto_create_dir = auto_create_dir
+        # Create destination directories if they don't exist
+        self._create_directories()
 
-    # create a new directory
-    def on_creation(self, event):
-        if event.is_directory:  # check if the event is a directory
+        # Keep track of processed files to avoid duplicates
+        self.processed_files = set()
+
+    def _create_directories(self):
+        """Create organized folders if they don't exist"""
+        for folder in self.file_types.keys():
+            folder_path = os.path.join(self.destination_base_dir, folder)
+            if not os.path.exists(folder_path):
+                os.makedirs(folder_path)
+                logging.info(f"Created directory: {folder_path}")
+
+        # Create Others folder
+        others_path = os.path.join(self.destination_base_dir, "Others")
+        if not os.path.exists(others_path):
+            os.makedirs(others_path)
+
+    def _get_destination_folder(self, file_extension):
+        """Determine the appropriate folder based on file extension"""
+        for folder, extensions in self.file_types.items():
+            if file_extension.lower() in extensions:
+                return folder
+        return "Others"
+
+    def on_created(self, event):
+        self._process_file(event)
+
+    def on_modified(self, event):
+        self._process_file(event)
+
+    def _process_file(self, event):
+        if event.is_directory:
             return
 
-        file_path = event.src_path  # get the file path
-        self.process_file(file_path)
+        file_path = event.src_path
 
-        # process the file and move it to the destination directory
+        # Skip if file has already been processed
+        if file_path in self.processed_files:
+            return
 
-    def process_files(self, file_path):
+        # Skip temporary files
+        if file_path.endswith(".crdownload") or file_path.endswith(".tmp"):
+            return
 
-        file_name = os.path.basename(file_path)  # get the file name
-        _, extension = os.path.splitText(file_name)  # get the file extension
-        extension = extension.lower()  # convert to lowercase
+        # Wait briefly to ensure the file is completely downloaded
+        time.sleep(1)
 
-        moved = False
-        for folder, extensions in self.destination_directory.items():
-            if extension in extensions:
-                destination = os.path.join(folder, file_name)
-                self.move_file(file_path, destination)
-                moved = True
-                break
+        try:
+            # Skip if file no longer exists (already moved)
+            if not os.path.exists(file_path):
+                return
 
-        if not moved:
-            if self.auto_create_dir:
+            # Get file extension and determine destination folder
+            file_extension = os.path.splitext(file_path)[1]
+            folder_name = self._get_destination_folder(file_extension)
 
-                new_folder = os.path.join(
-                    self.destination_directory, extension.lsrip(".")
-                )  # create a new folder
-                os.makedirs(new_folder, exist_ok=True)
-                self.destination_directory[new_folder] = [extension]
-                destination = os.path.join(new_folder, file_name)
-                self.move_file(file_path, destination)
-                logging.info(
-                    f"Created new folder for {extension} and moved {file_name} to {new_folder}"
-                )
-            elif self.move_unknown_files and self.unknown_files_directory:
-                destination = os.path.join(self.unknown_files_directory, file_name)
-                self.move_file(file_path, destination)
-                logging.info(
-                    f"Moved unknown file {file_name} to {self.unknown_files_directory}"
-                )
+            destination_dir = os.path.join(self.destination_base_dir, folder_name)
 
-    def move_file(self, source, destination):
+            # Get filename and create destination path
+            file_name = os.path.basename(file_path)
+            destination_path = os.path.join(destination_dir, file_name)
 
-        max_retries = 10
-        attempts = 0
-        while attempts < max_retries:
-            try:
-                shutil.move(source, destination)
-                logging.info(f"Moved {source} to {destination}")
-                break
-            except PermissionError:
-                attempts += 1
-                time.sleep(1)
-            except FileNotFoundError:
-                logging.error(f"File {source} not found")
-                break
-        else:
-            logging.error(f"Failed to move {source} to {destination}")
+            # Handle duplicate files
+            if os.path.exists(destination_path):
+                base_name, extension = os.path.splitext(file_name)
+                counter = 1
+                while os.path.exists(destination_path):
+                    new_name = f"{base_name}_{counter}{extension}"
+                    destination_path = os.path.join(destination_dir, new_name)
+                    counter += 1
+
+            # Move the file
+            shutil.move(file_path, destination_path)
+            self.processed_files.add(destination_path)
+            logging.info(f"Moved {file_name} to {folder_name} folder")
+
+        except Exception as e:
+            logging.error(f"Error processing {event.src_path}: {str(e)}")
 
 
-def load_config(config_path):
-    with open(config_path, "r") as config_file:
-        return yaml.safe_load(config_file)
+def main():
+    # Get user's home directory to monitor common download locations
+    home_dir = str(Path.home())
+
+    # List of directories to monitor (add your common download locations here)
+    monitored_dirs = [
+        os.path.join(home_dir, "Downloads"),
+        os.path.join(home_dir, "Desktop"),
+        "D:\\Downloads",  # Add more paths as needed (e.g., external drives)
+    ]
+
+    # Set destination directory to D drive
+    organized_files_path = r"D:\OrganizedDownloads"
+
+    # Create base directory in D drive if it doesn't exist already
+    if not os.path.exists(organized_files_path):
+        os.makedirs(organized_files_path)
+        logging.info(f"Created base directory in D drive: {organized_files_path}")
+
+    # Initialize observers for each monitored directory and start monitoring
+    observers = []
+    event_handler = FileOrganizer(monitored_dirs, organized_files_path)
+
+    for directory in monitored_dirs:
+        if os.path.exists(directory):
+            observer = Observer()
+            observer.schedule(event_handler, directory, recursive=False)
+            observer.start()
+            observers.append(observer)
+            logging.info(f"Started monitoring: {directory}")
+
+    logging.info(f"Files will be organized in: {organized_files_path}")
+
+    # Keep the program running or until interrupted by the user
+    try:
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        for observer in observers:
+            observer.stop()
+        logging.info("Stopping file organizer...")
+
+    for observer in observers:
+        observer.join()
 
 
-def setup_logging(log_file):
-    logging.basicConfig(
-        filename=log_file,
-        level=logging.INFO,
-        format="%(asctime)s - %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-    )
+if __name__ == "__main__":
+    main()
