@@ -25,3 +25,5 @@ test_downloads/
 test_organized/
 .pytest_cache/
 __pycache__/
+
+notes.txt
