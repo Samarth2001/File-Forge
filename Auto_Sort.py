@@ -8,6 +8,7 @@ from pathlib import Path
 import datetime
 import sys
 import winreg
+import json
 
 # Configure logging to write to both console and file
 log_file = os.path.join(str(Path.home()), "file_organizer_log.txt")
@@ -24,122 +25,48 @@ class FileOrganizer(FileSystemEventHandler):
         self.monitored_dirs = monitored_dirs
         self.destination_base_dir = destination_base_dir
         self.start_time = datetime.datetime.now()
-
-        # Expanded file types dictionary with more categories and extensions
-        self.file_types = {
-            "Images": [
-                ".jpg",
-                ".jpeg",
-                ".png",
-                ".gif",
-                ".bmp",
-                ".webp",
-                ".svg",
-                ".tiff",
-                ".ico",
-                ".raw",
-                ".psd",
-                ".ai",
-            ],
-            "Documents": [
-                # Microsoft Office
-                ".doc",
-                ".docx",
-                ".xls",
-                ".xlsx",
-                ".ppt",
-                ".pptx",
-                # PDFs and texts
-                ".pdf",
-                ".txt",
-                ".rtf",
-                ".odt",
-                ".ods",
-                ".odp",
-                # Other documents
-                ".csv",
-                ".json",
-                ".xml",
-                ".html",
-                ".htm",
-            ],
-            "Videos": [
-                ".mp4",
-                ".mkv",
-                ".avi",
-                ".mov",
-                ".wmv",
-                ".flv",
-                ".webm",
-                ".m4v",
-                ".mpg",
-                ".mpeg",
-                ".3gp",
-                ".3g2",
-                ".gif",
-            ],
-            "Audio": [
-                ".mp3",
-                ".wav",
-                ".flac",
-                ".m4a",
-                ".aac",
-                ".ogg",
-                ".wma",
-                ".aiff",
-                ".alac",
-                ".midi",
-                ".mid",
-            ],
-            "Archives": [
-                ".zip",
-                ".rar",
-                ".7z",
-                ".tar",
-                ".gz",
-                ".bz2",
-                ".xz",
-                ".iso",
-                ".dmg",
-            ],
-            "Code": [
-                ".py",
-                ".java",
-                ".cpp",
-                ".c",
-                ".h",
-                ".js",
-                ".css",
-                ".php",
-                ".html",
-                ".sql",
-                ".rb",
-                ".go",
-                ".rs",
-                ".swift",
-                ".kt",
-                ".ipynb",
-                ".r",
-                ".sh",
-                ".bat",
-                ".ps1",
-            ],
-            "Executables": [".exe", ".msi", ".app", ".dmg", ".deb", ".rpm"],
-            "Fonts": [".ttf", ".otf", ".woff", ".woff2", ".eot"],
-            "eBooks": [".epub", ".mobi", ".azw", ".azw3", ".fb2", ".lit"],
-        }
-
+        
+        # Load file types from JSON
+        self.file_types = self._load_file_types()
         self._create_directories()
         self.processed_files = set()
 
+    def _load_file_types(self):
+        """Load file types configuration from JSON"""
+        try:
+            config_path = os.path.join(os.path.dirname(__file__), 'file_types.json')
+            with open(config_path, 'r') as f:
+                config = json.load(f)
+            
+            # Flatten nested dictionaries (for Documents category)
+            file_types = {}
+            for category, extensions in config.items():
+                if isinstance(extensions, dict):
+                    # Flatten nested categories
+                    all_extensions = []
+                    for subcategory in extensions.values():
+                        all_extensions.extend(subcategory)
+                    file_types[category] = all_extensions
+                else:
+                    file_types[category] = extensions
+            
+            return file_types
+            
+        except Exception as e:
+            logging.error(f"Error loading file types: {str(e)}")
+            # Return default empty dict if config fails to load
+            return {}
+
     def _create_directories(self):
         """Create organized folders if they don't exist"""
+        # Create category directories
         for folder in self.file_types.keys():
             folder_path = os.path.join(self.destination_base_dir, folder)
             if not os.path.exists(folder_path):
                 os.makedirs(folder_path)
                 logging.info(f"Created directory: {folder_path}")
 
+        # Create Others directory
         others_path = os.path.join(self.destination_base_dir, "Others")
         if not os.path.exists(others_path):
             os.makedirs(others_path)
@@ -273,13 +200,13 @@ def main():
 
     # List of directories to monitor
     monitored_dirs = [
-        os.path.join(home_dir, "Downloads"),
-        os.path.join(home_dir, "Desktop"),
-        "D:\\Downloads",
+        os.path.join(str(Path.home()), "Downloads"),
+        os.path.join(str(Path.home()), "Desktop"),
+        "D:\\Downloads",  # Adjust if needed
     ]
 
     # Set destination directory to D drive
-    organized_files_path = r"D:\OrganizedDownloads"
+    organized_files_path = "D:\\OrganizedDownloads"  # Adjust if needed
 
     # Handle command line arguments for startup configuration
     if len(sys.argv) > 1:
