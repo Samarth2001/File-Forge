@@ -30,7 +30,13 @@ pip install watchdog
 1. **Clone or Download** the script into your desired directory.
 
 2. **Run the Script**:
-   
+
    ```bash
    python Auto_Sort.py
    ```
+
+By default, the script monitors the "Downloads" folder. You can modify the source directory as explained in the Configuration section.
+
+3. **View Logs**:
+
+The script generates a log file (file_organizer_log.txt) in your home directory. You can view this log to review file organization activities and troubleshoot issues.
