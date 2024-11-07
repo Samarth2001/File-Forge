@@ -4,9 +4,10 @@ import pytest
 import shutil
 import time
 import logging
+import datetime
 from pathlib import Path
 from watchdog.events import FileSystemEventHandler
-from Auto_Sort import FileOrganizer
+from Auto_Arrange import FileOrganizer
 
 
 class TestFileOrganizer:
@@ -18,11 +19,11 @@ class TestFileOrganizer:
         os.makedirs(self.test_source, exist_ok=True)
         os.makedirs(self.test_dest, exist_ok=True)
 
-        # Initialize organizer with proper timestamp
-        self.organizer = FileOrganizer([self.test_source], self.test_dest)
-        
-        # Ensure the directories are created
-        self.organizer._create_directories()
+        # Set start_time to a fixed time before tests
+        start_time = datetime.datetime.now() - datetime.timedelta(minutes=5)
+
+        # Initialize organizer with custom start_time
+        self.organizer = FileOrganizer([self.test_source], self.test_dest, start_time=start_time)
 
         yield
 

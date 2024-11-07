@@ -1,5 +1,6 @@
 import os
 import time
+import psutil
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 import shutil
@@ -21,96 +22,74 @@ logging.basicConfig(
 
 
 class FileOrganizer(FileSystemEventHandler):
-    def __init__(self, monitored_dirs, destination_base_dir):
+    def __init__(self, monitored_dirs, destination_base_dir, start_time=None):
         self.monitored_dirs = monitored_dirs
         self.destination_base_dir = destination_base_dir
-        self.start_time = datetime.datetime.now()
-        
-        # Load file types from JSON
+        self.start_time = start_time if start_time else datetime.datetime.now()
         self.file_types = self._load_file_types()
         self._create_directories()
         self.processed_files = set()
+        self.pending_files = []
+        self.last_batch_time = time.time()
+        self.batch_interval = 5  # Process files every 5 seconds
+        self.max_pending = 50  # Max files to queue
 
-    def _load_file_types(self):
-        """Load file types configuration from JSON"""
-        try:
-            config_path = os.path.join(os.path.dirname(__file__), 'file_types.json')
-            with open(config_path, 'r') as f:
-                config = json.load(f)
-            
-            # Flatten nested dictionaries (for Documents category)
-            file_types = {}
-            for category, extensions in config.items():
-                if isinstance(extensions, dict):
-                    # Flatten nested categories
-                    all_extensions = []
-                    for subcategory in extensions.values():
-                        all_extensions.extend(subcategory)
-                    file_types[category] = all_extensions
-                else:
-                    file_types[category] = extensions
-            
-            return file_types
-            
-        except Exception as e:
-            logging.error(f"Error loading file types: {str(e)}")
-            # Return default empty dict if config fails to load
-            return {}
+    def process_pending_files(self):
+        """Process queued files in batches"""
+        current_time = time.time()
+        if (
+            not self.pending_files
+            or (current_time - self.last_batch_time) < self.batch_interval
+        ):
+            return
 
-    def _create_directories(self):
-        """Create organized folders if they don't exist"""
-        # Create category directories
-        for folder in self.file_types.keys():
-            folder_path = os.path.join(self.destination_base_dir, folder)
-            if not os.path.exists(folder_path):
-                os.makedirs(folder_path)
-                logging.info(f"Created directory: {folder_path}")
+        files_to_process = self.pending_files[: self.max_pending]
+        self.pending_files = self.pending_files[self.max_pending :]
 
-        # Create Others directory
-        others_path = os.path.join(self.destination_base_dir, "Others")
-        if not os.path.exists(others_path):
-            os.makedirs(others_path)
+        for event in files_to_process:
+            self._process_file(event)
+
+        self.last_batch_time = current_time
+
+        # Memory optimization
+        if len(self.processed_files) > 1000:
+            self.processed_files.clear()
 
     def on_created(self, event):
-        """Handle file creation events"""
-        if event.is_directory:
+        """Queue files instead of processing immediately"""
+        if event.is_directory or self._is_temp_file(event.src_path):
             return
 
-        # Skip temporary files and partial downloads
-        if event.src_path.endswith(".tmp") or event.src_path.endswith(".crdownload"):
-            return
+        logging.info(f"File created: {event.src_path}")
+        self.pending_files.append(event)
+        self.process_pending_files()
 
-        # Skip if file doesn't exist
-        if not os.path.exists(event.src_path):
-            return
+    def _is_temp_file(self, path):
+        """Quick check for temporary files"""
+        return path.endswith((".tmp", ".crdownload"))
 
+    def _process_file(self, event):
+        """Optimized file processing"""
         try:
-            # Ignore files created before script started
-            creation_time = os.path.getctime(event.src_path)
-            if creation_time < self.start_time.timestamp():
+            if not os.path.exists(event.src_path):
+                logging.warning(f"File does not exist: {event.src_path}")
                 return
 
-            # Avoid processing same file multiple times
-            if event.src_path in self.processed_files:
+            # Use stat once instead of multiple exists/getctime calls
+            stat = os.stat(event.src_path)
+            if stat.st_ctime < self.start_time.timestamp():
+                logging.info(f"File created before start time: {event.src_path}")
                 return
 
-            # Wait for file to be completely written
-            initial_size = -1
-            current_size = 0
+            # Quick size check without loops
+            time.sleep(0.1)  # Minimal delay
+            if os.path.exists(event.src_path):
+                new_stat = os.stat(event.src_path)
+                if new_stat.st_size != stat.st_size:
+                    logging.info(f"File size changed: {event.src_path}")
+                    return
 
-            while initial_size != current_size:
-                initial_size = os.path.getsize(event.src_path)
-                time.sleep(1)  # Wait 1 second
-                if os.path.exists(event.src_path):  # Check if file still exists
-                    current_size = os.path.getsize(event.src_path)
-                else:
-                    return  # File was deleted, abort processing
-
-            # Additional wait for very large files
-            if current_size > 10_000_000:  # 10MB
-                time.sleep(2)
-
-            # Get file category
+            # Determine file category
             file_extension = os.path.splitext(event.src_path)[1].lower()
             category = "Others"
             for folder, extensions in self.file_types.items():
@@ -134,11 +113,50 @@ class FileOrganizer(FileSystemEventHandler):
             # Ensure source file still exists and move it
             if os.path.exists(event.src_path):
                 shutil.move(event.src_path, dest_path)
-                self.processed_files.add(dest_path)  # Store the destination path
+                self.processed_files.add(dest_path)
                 logging.info(f"Moved {filename} to {category} folder")
 
         except Exception as e:
             logging.error(f"Error processing {event.src_path}: {str(e)}")
+
+    def _load_file_types(self):
+        """Load file types configuration from JSON"""
+        try:
+            config_path = os.path.join(os.path.dirname(__file__), "file_types.json")
+            with open(config_path, "r") as f:
+                config = json.load(f)
+
+            # Flatten nested dictionaries (for Documents category)
+            file_types = {}
+            for category, extensions in config.items():
+                if isinstance(extensions, dict):
+                    # Flatten nested categories
+                    all_extensions = []
+                    for subcategory in extensions.values():
+                        all_extensions.extend(subcategory)
+                    file_types[category] = all_extensions
+                else:
+                    file_types[category] = extensions
+
+            return file_types
+
+        except Exception as e:
+            logging.error(f"Error loading file types: {str(e)}")
+            # Return default empty dict if config fails to load
+            return {}
+
+    def _create_directories(self):
+        """Create organized folders if they don't exist"""
+        for folder in self.file_types.keys():
+            folder_path = os.path.join(self.destination_base_dir, folder)
+            if not os.path.exists(folder_path):
+                os.makedirs(folder_path)
+                logging.info(f"Created directory: {folder_path}")
+
+        others_path = os.path.join(self.destination_base_dir, "Others")
+        if not os.path.exists(others_path):
+            os.makedirs(others_path)
+            logging.info(f"Created directory: {others_path}")
 
     def on_modified(self, event):
         """Handle file modification events"""
@@ -194,6 +212,7 @@ def remove_from_startup():
         return False
 
 
+# Modify main loop for efficiency
 def main():
     # Get user's home directory
     home_dir = str(Path.home())
@@ -239,7 +258,13 @@ def main():
 
     try:
         while True:
-            time.sleep(1)
+            event_handler.process_pending_files()
+            time.sleep(1)  # Reduced CPU usage
+
+            # Optional: System resource check
+            if psutil.cpu_percent() > 80 or psutil.virtual_memory().percent > 80:
+                time.sleep(5)  # Back off if system is under load
+
     except KeyboardInterrupt:
         for observer in observers:
             observer.stop()
