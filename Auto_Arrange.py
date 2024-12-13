@@ -22,11 +22,11 @@ logging.basicConfig(
 
 
 class FileOrganizer(FileSystemEventHandler):
-    def __init__(self, monitored_dirs, destination_base_dir, start_time=None):
+    def __init__(self, monitored_dirs, destination_base_dir, start_time=None, file_types=None):
         self.monitored_dirs = monitored_dirs
         self.destination_base_dir = destination_base_dir
         self.start_time = start_time if start_time else datetime.datetime.now()
-        self.file_types = self._load_file_types()
+        self.file_types = file_types if file_types else self._load_file_types()
         self._create_directories()
         self.processed_files = set()
         self.pending_files = []
@@ -60,7 +60,7 @@ class FileOrganizer(FileSystemEventHandler):
         if event.is_directory or self._is_temp_file(event.src_path):
             return
 
-        logging.info(f"File created: {event.src_path}")
+        logging.info(f"Event received for file: {event.src_path}")
         self.pending_files.append(event)
         self.process_pending_files()
 
@@ -69,37 +69,30 @@ class FileOrganizer(FileSystemEventHandler):
         return path.endswith((".tmp", ".crdownload"))
 
     def _process_file(self, event):
-        """Optimized file processing"""
         try:
+            logging.info(f"Processing file: {event.src_path}")
             if not os.path.exists(event.src_path):
                 logging.warning(f"File does not exist: {event.src_path}")
                 return
 
-            # Use stat once instead of multiple exists/getctime calls
-            stat = os.stat(event.src_path)
-            if stat.st_ctime < self.start_time.timestamp():
-                logging.info(f"File created before start time: {event.src_path}")
-                return
-
-            # Quick size check without loops
-            time.sleep(0.1)  # Minimal delay
-            if os.path.exists(event.src_path):
-                new_stat = os.stat(event.src_path)
-                if new_stat.st_size != stat.st_size:
-                    logging.info(f"File size changed: {event.src_path}")
-                    return
-
-            # Determine file category
-            file_extension = os.path.splitext(event.src_path)[1].lower()
+            # Check for composite extensions first
+            filename = os.path.basename(event.src_path)
             category = "Others"
+            
+            # Special handling for .tar.gz and similar composite extensions
+            if filename.endswith(".tar.gz"):
+                file_extension = ".tar.gz"
+            else:
+                file_extension = os.path.splitext(filename)[1].lower()
+                
+            # Find matching category
             for folder, extensions in self.file_types.items():
                 if file_extension in extensions:
                     category = folder
                     break
 
-            # Create destination path
+            # Rest of the method remains the same
             dest_dir = os.path.join(self.destination_base_dir, category)
-            filename = os.path.basename(event.src_path)
             dest_path = os.path.join(dest_dir, filename)
 
             # Handle duplicate filenames with counter
@@ -110,7 +103,7 @@ class FileOrganizer(FileSystemEventHandler):
                 dest_path = os.path.join(dest_dir, new_name)
                 counter += 1
 
-            # Ensure source file still exists and move it
+            # Move file if it still exists
             if os.path.exists(event.src_path):
                 shutil.move(event.src_path, dest_path)
                 self.processed_files.add(dest_path)
@@ -120,9 +113,9 @@ class FileOrganizer(FileSystemEventHandler):
             logging.error(f"Error processing {event.src_path}: {str(e)}")
 
     def _load_file_types(self):
-        """Load file types configuration from JSON"""
         try:
             config_path = os.path.join(os.path.dirname(__file__), "file_types.json")
+            logging.info(f"Attempting to load file types from: {config_path}")
             with open(config_path, "r") as f:
                 config = json.load(f)
 
@@ -138,6 +131,7 @@ class FileOrganizer(FileSystemEventHandler):
                 else:
                     file_types[category] = extensions
 
+            logging.info(f"Loaded file types: {file_types}")
             return file_types
 
         except Exception as e:

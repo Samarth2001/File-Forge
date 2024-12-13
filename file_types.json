@@ -17,7 +17,7 @@
         ".wma", ".aiff", ".alac", ".midi", ".mid"
     ],
     "Archives": [
-        ".zip", ".rar", ".7z", ".tar", ".gz", ".bz2",
+        ".zip", ".rar", ".7z", ".tar", ".gz", ".bz2",".tar.gz",
         ".xz", ".iso", ".dmg"
     ],
     "Code": [
