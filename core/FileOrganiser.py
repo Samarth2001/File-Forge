@@ -59,6 +59,12 @@ class FileOrganizer(FileSystemEventHandler):
             self.processed_files.clear()
 
     def on_created(self, event):
+        """Handle file creation event"""
+        if not event.is_directory:
+            self.process_file(event.src_path)
+
+    def on_modified(self, event):
+        """Handle file modification event"""
         if not event.is_directory:
             self.process_file(event.src_path)
 
@@ -68,18 +74,25 @@ class FileOrganizer(FileSystemEventHandler):
             if not os.path.exists(file_path):
                 return
 
+            # Skip if file existed before program start
+            if not self._is_new_file(file_path):
+                return
+
+            # Skip temporary files
             if self._is_temp_file(file_path):
                 return
 
+            # Get category
             category = self._get_category(file_path)
             filename = os.path.basename(file_path)
-            dest_dir = os.path.join(self.dest_dir, category)
             
-            # Ensure category directory exists
+            # Setup destination
+            dest_dir = os.path.join(self.dest_dir, category)
             os.makedirs(dest_dir, exist_ok=True)
             
-            # Handle duplicates
             dest_path = os.path.join(dest_dir, filename)
+            
+            # Handle duplicates
             if os.path.exists(dest_path):
                 base_name, ext = os.path.splitext(filename)
                 counter = 1
@@ -88,13 +101,20 @@ class FileOrganizer(FileSystemEventHandler):
                     dest_path = os.path.join(dest_dir, new_name)
                     counter += 1
 
-            # Move the file
+            # Move file
             shutil.move(file_path, dest_path)
             logging.info(f"Moved {filename} to {category}")
+            
+            # Update stats
+            self.stats_manager.update_stats({
+                'size': os.path.getsize(dest_path),
+                'category': category
+            })
+            
             return dest_path
 
         except Exception as e:
-            logging.error(f"Error processing {file_path}: {e}")
+            logging.error(f"Error processing {file_path}: {str(e)}")
             return None
 
     def _is_temp_file(self, path):
@@ -146,28 +166,38 @@ class FileOrganizer(FileSystemEventHandler):
 
     def _get_category(self, filepath):
         """Determine file category based on extension"""
-        # Handle special case for .tar.gz
-        if filepath.endswith('.tar.gz'):
-            return next((cat for cat, exts in self.file_types.items() 
-                        if '.tar.gz' in exts), "Others")
-        
-        file_ext = os.path.splitext(filepath)[1].lower()
-        return next((cat for cat, exts in self.file_types.items() 
-                    if file_ext in exts), "Others")
+        try:
+            # Handle special case for .tar.gz
+            if filepath.endswith('.tar.gz'):
+                return next((cat for cat, exts in self.file_types.items() 
+                          if '.tar.gz' in exts), "Others")
+            
+            # Get file extension and ensure it's lowercase
+            file_ext = os.path.splitext(filepath)[1].lower()
+            
+            # Check all extensions in file_types
+            for category, extensions in self.file_types.items():
+                # Convert all extensions to lowercase for comparison
+                if file_ext in [ext.lower() for ext in extensions]:
+                    logging.debug(f"File {filepath} categorized as {category}")
+                    return category
+                    
+            logging.debug(f"File {filepath} with extension {file_ext} categorized as Others")
+            return "Others"
+        except Exception as e:
+            logging.error(f"Error categorizing {filepath}: {str(e)}")
+            return "Others"
 
     def _create_directories(self):
-        """Create category directories if they don't exist"""
-        for category in self.file_types.keys():
+        """Create only main category directories"""
+        # Create main category directories only
+        base_categories = {
+            "Images", "Documents", "Videos", "Audio", 
+            "Archives", "Code", "Others"
+        }
+        
+        for category in base_categories:
             folder_path = os.path.join(self.dest_dir, category)
             if not os.path.exists(folder_path):
                 os.makedirs(folder_path)
                 logging.info(f"Created directory: {folder_path}")
-
-        # Create Others directory
-        others_path = os.path.join(self.dest_dir, "Others")
-        if not os.path.exists(others_path):
-            os.makedirs(others_path)
-            logging.info(f"Created directory: {others_path}")
-
-    def on_modified(self, event):
-        self.on_created(event)

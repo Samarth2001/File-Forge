@@ -1,6 +1,6 @@
-# Auto File Organizer
+# File Forge
 
-The **Auto File Organizer** is a Python script that monitors a specific directory and automatically Arranges files into appropriate subdirectories based on their type. This script is useful for keeping your download folder organized by categorizing files as soon as they are downloaded or created.
+The **File Forge** is a Python script that monitors a specific directory and automatically Arranges files into appropriate subdirectories based on their type. This script is useful for keeping your download folder organized by categorizing files as soon as they are downloaded or created.
 
 ---
 
@@ -54,12 +54,12 @@ pip install watchdog psutil
 
 1. **Clone or Download the Repository:**
    ```bash
-   git clone https://github.com/yourusername/auto-file-organizer.git
+   git clone https://github.com/yourusername/File-Forge.git
    ```
 
 2. **Navigate to the Directory:**
    ```bash
-   cd auto-file-organizer
+   cd file-forge
    ```
 
 ## Configuration

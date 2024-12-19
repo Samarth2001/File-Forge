@@ -12,22 +12,18 @@ class Config:
         with open(config_path) as f:
             self.file_types = json.load(f)
             
-        # Flatten nested categories
+        # Create case-insensitive mapping of extensions to categories
         self.flattened_types = {}
         for category, extensions in self.file_types.items():
-            if isinstance(extensions, dict):
-                for subcategory in extensions.values():
-                    self.flattened_types.update({ext: category for ext in subcategory})
-            else:
-                self.flattened_types.update({ext: category for ext in extensions})
+            for ext in extensions:
+                self.flattened_types[ext.lower()] = category
     
     def _setup_directories(self):
         self.monitored_dirs = [
             os.path.join(str(Path.home()), "Downloads"),
-            os.path.join(str(Path.home()), "Desktop"),
-            "D:\\Downloads"
+            os.path.join(str(Path.home()), "Desktop")
         ]
-        self.destination_dir = "D:\\OrganizedDownloads"
+        self.destination_dir = "D:\\OrganizedFiles"  # Changed to D drive
                 
     def get_category(self, filepath):
         if filepath.endswith(".tar.gz"):
