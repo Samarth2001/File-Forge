@@ -1,5 +1,5 @@
-# test_auto_sort.py
 import os
+import sys
 import pytest
 import shutil
 import time
@@ -8,7 +8,11 @@ import datetime
 import json
 from pathlib import Path
 from watchdog.events import FileSystemEventHandler
-from Auto_Arrange import FileOrganizer
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from core.FileOrganiser import FileOrganizer
+
 
 # Set working directory to script directory
 script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -61,7 +65,6 @@ class TestFileOrganizer:
         self.organizer = FileOrganizer(
             [self.test_source],
             self.test_dest,
-            start_time=start_time,
             file_types=file_types
         )
         self.organizer.batch_interval = 0
