@@ -2,6 +2,7 @@ import os
 import shutil
 import time
 import logging
+from typing import List, Dict, Set, Optional, Any
 from watchdog.events import FileSystemEventHandler
 import datetime
 from core.file_handler import FileHandler
@@ -10,10 +11,10 @@ from features.duplicates import DuplicateHandler
 from features.compression import CompressionHandler
 
 class FileOrganizer(FileSystemEventHandler):
-    def __init__(self, source_dirs, dest_dir, file_types=None):
+    def __init__(self, source_dirs: List[str], dest_dir: str, file_types: Optional[Dict[str, List[str]]] = None):
         self.source_dirs = source_dirs
         self.dest_dir = dest_dir
-        self.destination_base_dir = dest_dir  # Add this to fix attribute error
+        self.destination_base_dir = dest_dir
         self.file_types = file_types or {}
         
         # Initialize configuration
@@ -21,7 +22,6 @@ class FileOrganizer(FileSystemEventHandler):
             'enable_compression': False,
             'enable_stats': True,
             'enable_duplicates': True,
-            'get_category': self._get_category  # Add method for category determination
         }
         
         # Initialize handlers
@@ -31,8 +31,8 @@ class FileOrganizer(FileSystemEventHandler):
         self.compression_handler = CompressionHandler()
         
         # Initialize processing variables
-        self.processed_files = set()
-        self.pending_files = []
+        self.processed_files: Set[str] = set()
+        self.pending_files: List[Any] = []
         self.last_batch_time = time.time()
         self.batch_interval = 5
         self.max_pending = 50
@@ -40,8 +40,8 @@ class FileOrganizer(FileSystemEventHandler):
         
         self._create_directories()
 
-    def process_pending_files(self):
-        # Process any files that might be waiting
+    def process_pending_files(self) -> None:
+        """Process any files that might be waiting"""
         time.sleep(0.1)  # Small delay to ensure file operations complete
         current_time = time.time()
         if not self.pending_files or (current_time - self.last_batch_time) < self.batch_interval:
@@ -58,69 +58,65 @@ class FileOrganizer(FileSystemEventHandler):
         if len(self.processed_files) > 1000:
             self.processed_files.clear()
 
-    def on_created(self, event):
+    def on_created(self, event) -> None:
         """Handle file creation event"""
         if not event.is_directory:
             self.process_file(event.src_path)
 
-    def on_modified(self, event):
+    def on_modified(self, event) -> None:
         """Handle file modification event"""
         if not event.is_directory:
             self.process_file(event.src_path)
 
-    def process_file(self, file_path):
-        """Process a single file"""
+    def process_file(self, file_path: str) -> Optional[str]:
+        """Process a single file using the unified approach"""
         try:
             if not os.path.exists(file_path):
-                return
+                return None
 
             # Skip if file existed before program start
             if not self._is_new_file(file_path):
-                return
+                return None
 
             # Skip temporary files
             if self._is_temp_file(file_path):
-                return
+                return None
 
-            # Get category
+            # Check for duplicates if enabled
+            if self.config['enable_duplicates'] and self.duplicate_handler.is_duplicate(file_path):
+                logging.info(f"Duplicate file detected: {file_path}")
+                return None
+
+            # Get category and filename
             category = self._get_category(file_path)
             filename = os.path.basename(file_path)
             
-            # Setup destination
-            dest_dir = os.path.join(self.dest_dir, category)
-            os.makedirs(dest_dir, exist_ok=True)
+            # Use file_handler for consistent file movement
+            dest_path = self.file_handler.move_file(file_path, category, filename)
             
-            dest_path = os.path.join(dest_dir, filename)
-            
-            # Handle duplicates
-            if os.path.exists(dest_path):
-                base_name, ext = os.path.splitext(filename)
-                counter = 1
-                while os.path.exists(dest_path):
-                    new_name = f"{base_name}_{counter}{ext}"
-                    dest_path = os.path.join(dest_dir, new_name)
-                    counter += 1
-
-            # Move file
-            shutil.move(file_path, dest_path)
-            logging.info(f"Moved {filename} to {category}")
-            
-            # Update stats
-            self.stats_manager.update_stats({
-                'size': os.path.getsize(dest_path),
-                'category': category
-            })
-            
-            return dest_path
+            if dest_path:
+                self.processed_files.add(dest_path)
+                
+                # Update stats if enabled
+                if self.config['enable_stats']:
+                    self.stats_manager.update_stats({
+                        'size': os.path.getsize(dest_path),
+                        'category': category
+                    })
+                
+                logging.info(f"Moved {filename} to {category}")
+                return dest_path
 
         except Exception as e:
             logging.error(f"Error processing {file_path}: {str(e)}")
             return None
 
-    def _is_temp_file(self, path):
-        return path.endswith((".tmp", ".crdownload"))
+    def _is_temp_file(self, path: str) -> bool:
+        """Check if file is a temporary file"""
+        temp_extensions = (".tmp", ".crdownload", ".part")
+        return path.lower().endswith(temp_extensions)
 
-    def _is_new_file(self, filepath):
+    def _is_new_file(self, filepath: str) -> bool:
         """Check if file was created after the program started"""
         try:
             creation_time = os.path.getctime(filepath)
@@ -128,49 +124,17 @@ class FileOrganizer(FileSystemEventHandler):
         except OSError:
             return False
 
-    def _process_file(self, event):
-        try:
-            if not os.path.exists(event.src_path):
-                logging.warning(f"File does not exist: {event.src_path}")
-                return
+    def _process_file(self, event) -> None:
+        """Legacy method for batch processing - delegates to process_file"""
+        self.process_file(event.src_path)
 
-            # Skip if file existed before program start
-            if not self._is_new_file(event.src_path):
-                logging.debug(f"Skipping existing file: {event.src_path}")
-                return
-
-            # Check for duplicates
-            if self.duplicate_handler.is_duplicate(event.src_path):
-                logging.info(f"Duplicate file detected: {event.src_path}")
-                return
-
-            filename = os.path.basename(event.src_path)
-            category = self.config.get_category(event.src_path)
-            
-            dest_path = self.file_handler.move_file(
-                event.src_path,
-                category,
-                filename
-            )
-
-            if dest_path:
-                self.processed_files.add(dest_path)
-                self.stats_manager.update_stats({
-                    'size': os.path.getsize(dest_path),
-                    'category': category
-                })
-                logging.info(f"Moved {filename} to {category} folder")
-
-        except Exception as e:
-            logging.error(f"Error processing {event.src_path}: {str(e)}")
-
-    def _get_category(self, filepath):
+    def _get_category(self, filepath: str) -> str:
         """Determine file category based on extension"""
         try:
             # Handle special case for .tar.gz
-            if filepath.endswith('.tar.gz'):
+            if filepath.lower().endswith('.tar.gz'):
                 return next((cat for cat, exts in self.file_types.items() 
-                          if '.tar.gz' in exts), "Others")
+                          if '.tar.gz' in [ext.lower() for ext in exts]), "Others")
             
             # Get file extension and ensure it's lowercase
             file_ext = os.path.splitext(filepath)[1].lower()
@@ -188,16 +152,21 @@ class FileOrganizer(FileSystemEventHandler):
             logging.error(f"Error categorizing {filepath}: {str(e)}")
             return "Others"
 
-    def _create_directories(self):
-        """Create only main category directories"""
-        # Create main category directories only
-        base_categories = {
-            "Images", "Documents", "Videos", "Audio", 
-            "Archives", "Code", "Others"
-        }
-        
-        for category in base_categories:
-            folder_path = os.path.join(self.dest_dir, category)
-            if not os.path.exists(folder_path):
-                os.makedirs(folder_path)
-                logging.info(f"Created directory: {folder_path}")
+    def _create_directories(self) -> None:
+        """Create main category directories"""
+        try:
+            # Create main category directories from file_types plus Others
+            categories = set(self.file_types.keys())
+            categories.add("Others")
+            
+            for category in categories:
+                folder_path = os.path.join(self.dest_dir, category)
+                if not os.path.exists(folder_path):
+                    os.makedirs(folder_path)
+                    logging.info(f"Created directory: {folder_path}")
+        except Exception as e:
+            logging.error(f"Error creating directories: {str(e)}")
+
+    def get_stats(self) -> Dict[str, Any]:
+        """Get current processing statistics"""
+        return self.stats_manager.get_stats() if self.config['enable_stats'] else {}
