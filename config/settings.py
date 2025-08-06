@@ -1,33 +1,81 @@
 import json
 import os
 from pathlib import Path
+import logging
+from typing import Dict, List, Any
+
+# Get the absolute path to the project's root directory
+ROOT_DIR = Path(__file__).parent.parent
 
 class Config:
-    def __init__(self):
-        self.load_config()
-        self._setup_directories()
-        
-    def load_config(self):
-        config_path = os.path.join(os.path.dirname(__file__), "file_types.json")
-        with open(config_path) as f:
-            self.file_types = json.load(f)
-            
-        # Create case-insensitive mapping of extensions to categories
-        self.flattened_types = {}
-        for category, extensions in self.file_types.items():
-            for ext in extensions:
-                self.flattened_types[ext.lower()] = category
-    
-    def _setup_directories(self):
-        self.monitored_dirs = [
-            os.path.join(str(Path.home()), "Downloads"),
-            os.path.join(str(Path.home()), "Desktop")
+    def __init__(self, config_file: str = "file_types.json"):
+        self.config_file = ROOT_DIR / "config" / config_file
+        try:
+            self.file_types = self._load_file_types()
+            self.monitored_dirs = self._setup_monitored_dirs()
+            self.destination_dir = self._setup_destination_dir()
+            self.feature_flags = self._load_feature_flags()
+            self.temp_extensions = self._load_temp_extensions()
+            self.default_category = self._load_default_category()
+            self.debounce_delay = self._load_debounce_delay()
+        except (ValueError, OSError) as e:
+            logging.error(f"Configuration error: {e}")
+            raise
+
+    def _load_file_types(self) -> Dict[str, List[str]]:
+        try:
+            with open(self.config_file, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError) as e:
+            raise ValueError(f"Failed to load or parse config file '{self.config_file}': {e}")
+
+    def _setup_monitored_dirs(self) -> List[str]:
+        home = Path.home()
+        return [str(home / "Downloads"), str(home / "Desktop")]
+
+    def _setup_destination_dir(self) -> str:
+        home = Path.home()
+        # Define possible destination directories, from most to least preferred
+        possible_destinations = [
+            Path("D:/OrganizedFiles"),
+            Path("C:/OrganizedFiles"),
+            home / "OrganizedFiles",
+            Path.cwd() / "OrganizedFiles"
         ]
-        self.destination_dir = "D:\\OrganizedFiles"  # Changed to D drive
-                
-    def get_category(self, filepath):
-        if filepath.endswith(".tar.gz"):
-            ext = ".tar.gz"
-        else:
-            ext = os.path.splitext(filepath)[1].lower()
-        return self.flattened_types.get(ext, "Others")
+        
+        for dest in possible_destinations:
+            try:
+                dest.mkdir(parents=True, exist_ok=True)
+                return str(dest)
+            except (PermissionError, OSError):
+                continue
+        
+        # This will only be reached if all attempts to create a directory fail
+        raise OSError("Could not create any destination directory. Please check permissions.")
+
+    def _load_feature_flags(self) -> Dict[str, bool]:
+        # Configuration for features like compression, stats, and duplicates
+        return {
+            "duplicates": True,
+            "compression": False,
+            "stats": True
+        }
+
+    def _load_temp_extensions(self) -> List[str]:
+        return [".tmp", ".crdownload", ".part"]
+
+    def _load_default_category(self) -> str:
+        return "Others"
+
+    def _load_debounce_delay(self) -> float:
+        return 1.0  # 1 second
+
+    def get_config_summary(self) -> Dict[str, Any]:
+        return {
+            'monitored_directories': self.monitored_dirs,
+            'destination_directory': self.destination_dir,
+            'file_categories': list(self.file_types.keys()),
+            'total_extensions': sum(len(exts) for exts in self.file_types.values()),
+            'features': self.feature_flags,
+            'debounce_delay': self.debounce_delay
+        }

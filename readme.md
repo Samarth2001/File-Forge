@@ -1,6 +1,6 @@
 # File Forge
 
-The **File Forge** is a Python script that monitors a specific directory and automatically Arranges files into appropriate subdirectories based on their type. This script is useful for keeping your download folder organized by categorizing files as soon as they are downloaded or created.
+**File Forge** is a powerful, cross-platform tool that automatically organizes files in specified directories based on their type. Keep your digital space tidy with this efficient and easy-to-use command-line utility.
 
 ---
 
@@ -14,9 +14,10 @@ The **File Forge** is a Python script that monitors a specific directory and aut
   - [Destination Directory](#destination-directory)
   - [File Types Configuration](#file-types-configuration)
 - [Usage](#usage)
-  - [Running the Script](#running-the-script)
-  - [Adding to Startup](#adding-to-startup)
-  - [Removing from Startup](#removing-from-startup)
+- [Running as a Service](#running-as-a-service)
+  - [Linux (systemd)](#linux-systemd)
+  - [macOS (launchd)](#macos-launchd)
+  - [Windows (Task Scheduler)](#windows-task-scheduler)
 - [Testing](#testing)
 - [Troubleshooting](#troubleshooting)
 - [License](#license)
@@ -25,180 +26,195 @@ The **File Forge** is a Python script that monitors a specific directory and aut
 
 ## Features
 
-- **Automatic Arranging**: Moves files to designated folders based on their extensions.
-- **Customizable Monitoring**: Specify which directories to monitor.
-- **Configurable Categories**: Easily update file type categories via a JSON file.
-- **Runs on Startup**: Optionally configure the script to run automatically when your system starts.
-- **Logging**: Generates a log file to track actions and errors.
-- **Batch Processing**: Processes files efficiently to reduce system load.
-
+- **Automatic Organization**: Moves files to designated folders based on their extensions.
+- **Cross-Platform**: Works on Linux, macOS, and Windows.
+- **Command-Line Interface**: Easy-to-use commands to `start`, `stop`, and check the `status` of the service.
+- **Customizable**: Configure monitored directories and file categories through a simple JSON file.
+- **Efficient**: Uses a PID file to ensure only one instance is running at a time.
+- **Logging**: Keeps a detailed log of all operations for easy monitoring and troubleshooting.
 
 ## Prerequisites
 
-- **Operating System**: Windows
-- **Python Version**: Python 3.x
+- **Operating System**: Linux, macOS, or Windows
+- **Python Version**: Python 3.7+
 
 **Required Python Packages**
 
-- `watchdog`
-- `psutil` (if implementing performance enhancements)
+- `watchdog`: For monitoring file system events.
+- `psutil`: For process management.
 
-Install the required packages using:
+Install the required packages using `pip`:
 
 ```bash
-pip install watchdog psutil
+pip install -r requirements.txt
 ```
+
 ---
 
 ## Installation
 
-1. **Clone or Download the Repository:**
-   ```bash
-   git clone https://github.com/yourusername/File-Forge.git
-   ```
+1.  **Clone the Repository**:
+    ```bash
+    git clone https://github.com/your-username/file-forge.git
+    cd file-forge
+    ```
 
-2. **Navigate to the Directory:**
-   ```bash
-   cd file-forge
-   ```
+2.  **Install Dependencies**:
+    ```bash
+    pip install -r requirements.txt
+    ```
+
+---
 
 ## Configuration
 
-Before running the script, you may want to adjust the configuration to suit your needs.
+Customize File Forge to fit your needs by editing the configuration files.
 
 ### Monitored Directories
 
-By default, the script monitors the following directories:
+By default, File Forge monitors your `Downloads` and `Desktop` folders. You can change this by editing `config/settings.py`.
 
-- `C:\Users\<YourUsername>\Downloads`
-- `C:\Users\<YourUsername>\Desktop`
-- `D:\Downloads`
-
-To change the directories, edit the `monitored_dirs` list in `Auto_Arrange.py`:
-
-```python
-monitored_dirs = [
-    r"C:\Users\<YourUsername>\Downloads",
-    r"C:\Users\<YourUsername>\Desktop",
-    r"D:\Downloads"
-]
-```
 ### Destination Directory
 
-The default destination directory is D:\OrganizedDownloads. To change it, modify the organized_files_path variable in Auto_Arrange.py:
-```python
-organized_files_path = "D:\\OrganizedDownloads"  # Adjust as needed
-```
-Make sure the destination drive and path exist or can be created by the script.
+The default destination for organized files is `D:\OrganizedFiles` on Windows and `~/OrganizedFiles` on other systems. This can also be configured in `config/settings.py`.
 
 ### File Types Configuration
 
-File type categories and their associated extensions are defined in `file_types.json`. This allows easy updates without modifying the script.
+File categories are defined in `config/file_types.json`. You can add new file types or change existing ones without modifying the source code.
 
-Example `file_types.json`:
-
+**Example `file_types.json`**:
 ```json
 {
     "Images": [".jpg", ".jpeg", ".png", ".gif", ".bmp"],
-    "Documents": {
-        "Office": [".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx"],
-        "Text": [".pdf", ".txt", ".rtf"],
-        "Data": [".csv", ".json", ".xml"]
-    },
-    "Videos": [".mp4", ".mkv", ".avi"],
-    "Audio": [".mp3", ".wav", ".flac"],
-    "Archives": [".zip", ".rar", ".7z"],
-    "Code": [".py", ".java", ".cpp"],
-    "Executables": [".exe", ".msi"],
-    "Others": []
+    "Documents": [".pdf", ".doc", ".docx", ".txt"],
+    "Archives": [".zip", ".rar", ".tar.gz"]
 }
 ```
-
-## Notes
-
-- **Nested Categories**: The script flattens nested categories. For example, under "Documents", subcategories like "Office", "Text", and "Data" are merged into a single "Documents" folder.
-- **Adding Extensions**: To add a new extension to an existing category, simply add it to the appropriate category in `file_types.json`.
-- **Adding Categories**: To create a new category, add a new key to the JSON file with a list of associated extensions.
 
 ---
 
 ## Usage
 
-### Running the Script
+File Forge is controlled via the command line:
 
-To run the script manually:
+- **Start the service**:
+  ```bash
+  python main.py start
+  ```
 
-```bash
-python Auto_Arrange.py
-```
-The script will start monitoring the specified directories and organizing files accordingly.
+- **Stop the service**:
+  ```bash
+  python main.py stop
+  ```
 
-### Adding to Startup
+- **Check the status**:
+  ```bash
+  python main.py status
+  ```
 
-To run the script automatically when you log in to Windows:
+---
 
-1. **Add to Startup**:
-   - Create a batch file that runs the Python script.
-   - Add a registry entry to run the batch file at startup.
+## Running as a Service
 
-2. **Verify**:
-   - The script creates a log file at `%USERPROFILE%\file_organizer_log.txt`.
-   - Check this log file to ensure the script is running without errors.
+For continuous, automatic file organization, you can set up File Forge to run as a background service on your operating system.
 
-### Removing from Startup
+### Linux (systemd)
 
-To remove the script from the startup sequence:
+1.  **Create a Service File**:
+    Create a file named `file-forge.service` in `/etc/systemd/system/`:
+    ```ini
+    [Unit]
+    Description=File Forge Service
+    After=network.target
 
-```python
-python Auto_Arrange.py --remove-startup
-```
+    [Service]
+    User=your-username
+    Group=your-group
+    WorkingDirectory=/path/to/file-forge
+    ExecStart=/usr/bin/python /path/to/file-forge/main.py start
+    Restart=always
+
+    [Install]
+    WantedBy=multi-user.target
+    ```
+    Replace `your-username`, `your-group`, and `/path/to/file-forge` with your actual user, group, and project path.
+
+2.  **Enable and Start the Service**:
+    ```bash
+    sudo systemctl daemon-reload
+    sudo systemctl enable file-forge.service
+    sudo systemctl start file-forge.service
+    ```
+
+### macOS (launchd)
+
+1.  **Create a Launch Agent**:
+    Create a file named `com.fileforge.plist` in `~/Library/LaunchAgents/`:
+    ```xml
+    <?xml version="1.0" encoding="UTF-8"?>
+    <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+    <plist version="1.0">
+    <dict>
+        <key>Label</key>
+        <string>com.fileforge</string>
+        <key>ProgramArguments</key>
+        <array>
+            <string>/usr/bin/python</string>
+            <string>/path/to/file-forge/main.py</string>
+            <string>start</string>
+        </array>
+        <key>RunAtLoad</key>
+        <true/>
+        <key>KeepAlive</key>
+        <true/>
+    </dict>
+    </plist>
+    ```
+    Replace `/path/to/file-forge` with the actual path to the project.
+
+2.  **Load the Agent**:
+    ```bash
+    launchctl load ~/Library/LaunchAgents/com.fileforge.plist
+    ```
+
+### Windows (Task Scheduler)
+
+1.  **Create a Batch File**:
+    Create a file named `start-file-forge.bat` with the following content:
+    ```bat
+    @echo off
+    cd /d "C:\path\to\file-forge"
+    python main.py start
+    ```
+    Replace `C:\path\to\file-forge` with the actual path to the project.
+
+2.  **Schedule a Task**:
+    - Open Task Scheduler.
+    - Click "Create Basic Task...".
+    - Name the task "File Forge" and click "Next".
+    - Set the trigger to "When I log on" and click "Next".
+    - Choose "Start a program" and click "Next".
+    - Browse to and select your `start-file-forge.bat` file.
+    - Click "Finish".
+
 ---
 
 ## Testing
 
-To ensure the script works correctly:
-
-1. **Place Test Files**: Add files of various types to the monitored directories.
-2. **Observe**: Wait a few seconds for the script to process the files.
-3. **Verify**: Check the destination directories to see if files have been moved appropriately.
-4. **Check Logs**: Review the log file (`%USERPROFILE%\file_organizer_log.txt`) for any errors or warnings.
+To verify that File Forge is working correctly:
+1.  Add files of various types to your monitored directories.
+2.  Check the destination folder to confirm they have been moved to the correct subdirectories.
+3.  Review the `logs/file_organizer.log` file for any errors.
 
 ---
 
 ## Troubleshooting
 
-### Files Not Being Moved
-- Ensure the script is running.
-- Check that the monitored directories and destination directory exist.
-- Verify that you have the necessary permissions to access and modify files in the specified directories.
+- **Files Not Moving**: Ensure the service is running (`python main.py status`) and check the log file for errors.
+- **Permissions**: Verify that you have the necessary permissions to read from the monitored directories and write to the destination directory.
 
-### Script Not Starting on Boot
-- Run the script with `--add-startup` as an administrator.
-- Check the startup folder or registry entries to ensure the script is set to run on boot.
-
-### High CPU or Memory Usage
-- The script includes optimizations to reduce system load. Make sure you have the latest version.
-- Reduce the number of monitored directories if performance issues persist.
-
-### Files with Unknown Extensions
-- Update `file_types.json` to include the new extensions.
-- Files with extensions not listed in `file_types.json` will be moved to the "Others" folder by default.
+---
 
 ## License
 
 This project is licensed under the MIT License. See the `LICENSE` file for details.
-
-## Contributing
-
-Contributions are welcome! Please open an issue or submit a pull request for any improvements.
-
-## Acknowledgments
-
-- **Watchdog**: Used for monitoring file system events.
-- **Python.org**: The Python programming language.
-
-## Disclaimer
-
-This script is provided "as is" without any warranty. Use at your own risk. Always back up important data before running scripts that modify file systems.
-
- 
