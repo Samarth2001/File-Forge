@@ -6,35 +6,47 @@ from typing import List, Dict, Optional, Any
 from watchdog.events import FileSystemEventHandler
 from core.file_handler import FileHandler
 from features.duplicates import DuplicateHandler
+from threading import Timer
 
 class FileOrganizer(FileSystemEventHandler):
     def __init__(self, source_dirs: List[str], dest_dir: str, file_types: Dict[str, List[str]], 
-                 feature_flags: Dict[str, bool], temp_extensions: List[str], default_category: str):
+                 feature_flags: Dict[str, bool], temp_extensions: List[str], default_category: str,
+                 debounce_delay: float):
         self.source_dirs = source_dirs
         self.dest_dir = dest_dir
         self.file_types = file_types
         self.feature_flags = feature_flags
         self.temp_extensions = temp_extensions
         self.default_category = default_category
+        self.debounce_delay = debounce_delay
         
         self.file_handler = FileHandler(self.dest_dir)
         self.duplicate_handler = DuplicateHandler() if self.feature_flags.get("duplicates") else None
         
         self.start_time = time.time()
-        
         self._extension_map = self._create_extension_map()
         self._create_directories()
+        self._event_timers: Dict[str, Timer] = {}
 
     def _create_extension_map(self) -> Dict[str, str]:
-        extension_map = {}
-        for category, extensions in self.file_types.items():
-            for ext in extensions:
-                extension_map[ext] = category
-        return extension_map
+        return {ext: cat for cat, exts in self.file_types.items() for ext in exts}
 
-    def on_created(self, event):
-        if not event.is_directory:
-            self.process_file(event.src_path)
+    def on_any_event(self, event):
+        if event.is_directory or event.event_type not in ('created', 'modified'):
+            return
+
+        if event.src_path in self._event_timers:
+            self._event_timers[event.src_path].cancel()
+
+        self._event_timers[event.src_path] = Timer(
+            self.debounce_delay, self._process_event, args=[event.src_path]
+        )
+        self._event_timers[event.src_path].start()
+
+    def _process_event(self, file_path: str):
+        if file_path in self._event_timers:
+            del self._event_timers[file_path]
+        self.process_file(file_path)
 
     def process_file(self, file_path: str) -> Optional[str]:
         try:
@@ -78,10 +90,7 @@ class FileOrganizer(FileSystemEventHandler):
 
     def _get_category(self, filepath: str) -> str:
         suffixes = "".join(Path(filepath).suffixes).lower()
-        if not suffixes:
-            return self.default_category
-        
-        return self._extension_map.get(suffixes, self.default_category)
+        return self._extension_map.get(suffixes, self.default_category) if suffixes else self.default_category
 
     def _create_directories(self) -> None:
         try:

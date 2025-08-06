@@ -17,6 +17,7 @@ class Config:
             self.feature_flags = self._load_feature_flags()
             self.temp_extensions = self._load_temp_extensions()
             self.default_category = self._load_default_category()
+            self.debounce_delay = self._load_debounce_delay()
         except (ValueError, OSError) as e:
             logging.error(f"Configuration error: {e}")
             raise
@@ -66,11 +67,15 @@ class Config:
     def _load_default_category(self) -> str:
         return "Others"
 
+    def _load_debounce_delay(self) -> float:
+        return 1.0  # 1 second
+
     def get_config_summary(self) -> Dict[str, Any]:
         return {
             'monitored_directories': self.monitored_dirs,
             'destination_directory': self.destination_dir,
             'file_categories': list(self.file_types.keys()),
             'total_extensions': sum(len(exts) for exts in self.file_types.values()),
-            'features': self.feature_flags
+            'features': self.feature_flags,
+            'debounce_delay': self.debounce_delay
         }

@@ -65,7 +65,8 @@ def start_monitoring_service():
             file_types=config.file_types,
             feature_flags=config.feature_flags,
             temp_extensions=config.temp_extensions,
-            default_category=config.default_category
+            default_category=config.default_category,
+            debounce_delay=config.debounce_delay
         )
         
         for directory in config.monitored_dirs:
