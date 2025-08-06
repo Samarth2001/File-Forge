@@ -33,11 +33,23 @@ class TestFileOrganizer:
             "Documents": [".pdf", ".txt", ".docx"],
             "Archives": [".zip", ".tar.gz"],
         }
+        
+        feature_flags = {
+            "duplicates": True,
+            "compression": False,
+            "stats": True
+        }
+        
+        temp_extensions = [".tmp", ".crdownload", ".part"]
+        default_category = "Others"
 
         self.organizer = FileOrganizer(
             source_dirs=[str(self.test_source)],
             dest_dir=str(self.test_dest),
-            file_types=file_types
+            file_types=file_types,
+            feature_flags=feature_flags,
+            temp_extensions=temp_extensions,
+            default_category=default_category
         )
         self.organizer.start_time = time.time() - 10 # Process all created files
         

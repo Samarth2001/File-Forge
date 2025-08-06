@@ -14,6 +14,9 @@ class Config:
             self.file_types = self._load_file_types()
             self.monitored_dirs = self._setup_monitored_dirs()
             self.destination_dir = self._setup_destination_dir()
+            self.feature_flags = self._load_feature_flags()
+            self.temp_extensions = self._load_temp_extensions()
+            self.default_category = self._load_default_category()
         except (ValueError, OSError) as e:
             logging.error(f"Configuration error: {e}")
             raise
@@ -49,10 +52,25 @@ class Config:
         # This will only be reached if all attempts to create a directory fail
         raise OSError("Could not create any destination directory. Please check permissions.")
 
+    def _load_feature_flags(self) -> Dict[str, bool]:
+        # Configuration for features like compression, stats, and duplicates
+        return {
+            "duplicates": True,
+            "compression": False,
+            "stats": True
+        }
+
+    def _load_temp_extensions(self) -> List[str]:
+        return [".tmp", ".crdownload", ".part"]
+
+    def _load_default_category(self) -> str:
+        return "Others"
+
     def get_config_summary(self) -> Dict[str, Any]:
         return {
             'monitored_directories': self.monitored_dirs,
             'destination_directory': self.destination_dir,
             'file_categories': list(self.file_types.keys()),
-            'total_extensions': sum(len(exts) for exts in self.file_types.values())
+            'total_extensions': sum(len(exts) for exts in self.file_types.values()),
+            'features': self.feature_flags
         }

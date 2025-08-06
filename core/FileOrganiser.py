@@ -2,23 +2,35 @@ import os
 import logging
 import time
 from pathlib import Path
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Any
 from watchdog.events import FileSystemEventHandler
 from core.file_handler import FileHandler
 from features.duplicates import DuplicateHandler
 
 class FileOrganizer(FileSystemEventHandler):
-    def __init__(self, source_dirs: List[str], dest_dir: str, file_types: Optional[Dict[str, List[str]]] = None):
+    def __init__(self, source_dirs: List[str], dest_dir: str, file_types: Dict[str, List[str]], 
+                 feature_flags: Dict[str, bool], temp_extensions: List[str], default_category: str):
         self.source_dirs = source_dirs
         self.dest_dir = dest_dir
-        self.file_types = file_types or {}
+        self.file_types = file_types
+        self.feature_flags = feature_flags
+        self.temp_extensions = temp_extensions
+        self.default_category = default_category
         
         self.file_handler = FileHandler(self.dest_dir)
-        self.duplicate_handler = DuplicateHandler()
+        self.duplicate_handler = DuplicateHandler() if self.feature_flags.get("duplicates") else None
         
         self.start_time = time.time()
         
+        self._extension_map = self._create_extension_map()
         self._create_directories()
+
+    def _create_extension_map(self) -> Dict[str, str]:
+        extension_map = {}
+        for category, extensions in self.file_types.items():
+            for ext in extensions:
+                extension_map[ext] = category
+        return extension_map
 
     def on_created(self, event):
         if not event.is_directory:
@@ -29,7 +41,7 @@ class FileOrganizer(FileSystemEventHandler):
             if not os.path.exists(file_path) or not self._is_new_file(file_path) or self._is_temp_file(file_path):
                 return None
 
-            if self.duplicate_handler.is_duplicate(file_path):
+            if self.duplicate_handler and self.duplicate_handler.is_duplicate(file_path):
                 logging.info(f"Duplicate file detected and ignored: {file_path}")
                 try:
                     os.remove(file_path)
@@ -56,7 +68,7 @@ class FileOrganizer(FileSystemEventHandler):
         return None
 
     def _is_temp_file(self, path: str) -> bool:
-        return path.lower().endswith((".tmp", ".crdownload", ".part"))
+        return path.lower().endswith(tuple(self.temp_extensions))
 
     def _is_new_file(self, filepath: str) -> bool:
         try:
@@ -67,16 +79,13 @@ class FileOrganizer(FileSystemEventHandler):
     def _get_category(self, filepath: str) -> str:
         suffixes = "".join(Path(filepath).suffixes).lower()
         if not suffixes:
-            return "Others"
+            return self.default_category
         
-        for category, extensions in self.file_types.items():
-            if any(suffixes.endswith(ext) for ext in extensions):
-                return category
-        return "Others"
+        return self._extension_map.get(suffixes, self.default_category)
 
     def _create_directories(self) -> None:
         try:
-            for category in set(self.file_types.keys()) | {"Others"}:
+            for category in set(self.file_types.keys()) | {self.default_category}:
                 Path(self.dest_dir).joinpath(category).mkdir(parents=True, exist_ok=True)
         except OSError as e:
             logging.error(f"Error creating directories: {e}")

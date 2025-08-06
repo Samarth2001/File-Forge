@@ -62,7 +62,10 @@ def start_monitoring_service():
         organizer = FileOrganizer(
             source_dirs=config.monitored_dirs,
             dest_dir=config.destination_dir,
-            file_types=config.file_types
+            file_types=config.file_types,
+            feature_flags=config.feature_flags,
+            temp_extensions=config.temp_extensions,
+            default_category=config.default_category
         )
         
         for directory in config.monitored_dirs:
