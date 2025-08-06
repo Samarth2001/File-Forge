@@ -1,99 +1,58 @@
 import json
 import os
 from pathlib import Path
+import logging
 from typing import Dict, List, Any
 
+# Get the absolute path to the project's root directory
+ROOT_DIR = Path(__file__).parent.parent
+
 class Config:
-    def __init__(self, config_file: str = None):
-        self.config_file = config_file
-        self.load_config()
-        self._setup_directories()
-        
-    def load_config(self) -> None:
-        """Load file type configuration from JSON file"""
+    def __init__(self, config_file: str = "file_types.json"):
+        self.config_file = ROOT_DIR / "config" / config_file
         try:
-            config_path = os.path.join(os.path.dirname(__file__), "file_types.json")
-            with open(config_path, 'r', encoding='utf-8') as f:
-                self.file_types = json.load(f)
-                
-            # Create case-insensitive mapping of extensions to categories
-            self.flattened_types: Dict[str, str] = {}
-            for category, extensions in self.file_types.items():
-                for ext in extensions:
-                    self.flattened_types[ext.lower()] = category
-        except FileNotFoundError:
-            raise FileNotFoundError(f"Configuration file not found: {config_path}")
-        except json.JSONDecodeError as e:
-            raise ValueError(f"Invalid JSON in configuration file: {e}")
-    
-    def _setup_directories(self) -> None:
-        """Setup source and destination directories with fallback options"""
-        # Default monitored directories
-        self.monitored_dirs: List[str] = [
-            os.path.join(str(Path.home()), "Downloads"),
-            os.path.join(str(Path.home()), "Desktop")
-        ]
-        
-        # Try to set destination directory with fallbacks
+            self.file_types = self._load_file_types()
+            self.monitored_dirs = self._setup_monitored_dirs()
+            self.destination_dir = self._setup_destination_dir()
+        except (ValueError, OSError) as e:
+            logging.error(f"Configuration error: {e}")
+            raise
+
+    def _load_file_types(self) -> Dict[str, List[str]]:
+        try:
+            with open(self.config_file, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError) as e:
+            raise ValueError(f"Failed to load or parse config file '{self.config_file}': {e}")
+
+    def _setup_monitored_dirs(self) -> List[str]:
+        home = Path.home()
+        return [str(home / "Downloads"), str(home / "Desktop")]
+
+    def _setup_destination_dir(self) -> str:
+        home = Path.home()
+        # Define possible destination directories, from most to least preferred
         possible_destinations = [
-            "D:\\OrganizedFiles",  # Primary choice
-            "C:\\OrganizedFiles",  # Fallback to C drive
-            os.path.join(str(Path.home()), "OrganizedFiles")  # User directory fallback
+            Path("D:/OrganizedFiles"),
+            Path("C:/OrganizedFiles"),
+            home / "OrganizedFiles",
+            Path.cwd() / "OrganizedFiles"
         ]
         
-        self.destination_dir = self._find_valid_destination(possible_destinations)
-        
-        # Ensure destination directory exists
-        try:
-            os.makedirs(self.destination_dir, exist_ok=True)
-        except PermissionError:
-            raise PermissionError(f"Cannot create destination directory: {self.destination_dir}")
-    
-    def _find_valid_destination(self, paths: List[str]) -> str:
-        """Find the first valid destination path from the list"""
-        for path in paths:
+        for dest in possible_destinations:
             try:
-                # Try to create the directory to test permissions
-                os.makedirs(path, exist_ok=True)
-                return path
+                dest.mkdir(parents=True, exist_ok=True)
+                return str(dest)
             except (PermissionError, OSError):
                 continue
         
-        # If all fails, use current directory as last resort
-        fallback = os.path.join(os.getcwd(), "OrganizedFiles")
-        os.makedirs(fallback, exist_ok=True)
-        return fallback
-                
-    def get_category(self, filepath: str) -> str:
-        """Get category for a file based on its extension"""
-        try:
-            if filepath.lower().endswith(".tar.gz"):
-                ext = ".tar.gz"
-            else:
-                ext = os.path.splitext(filepath)[1].lower()
-            return self.flattened_types.get(ext, "Others")
-        except Exception:
-            return "Others"
-    
-    def add_monitored_directory(self, directory: str) -> bool:
-        """Add a new directory to monitor"""
-        if os.path.exists(directory) and directory not in self.monitored_dirs:
-            self.monitored_dirs.append(directory)
-            return True
-        return False
-    
-    def remove_monitored_directory(self, directory: str) -> bool:
-        """Remove a directory from monitoring"""
-        if directory in self.monitored_dirs:
-            self.monitored_dirs.remove(directory)
-            return True
-        return False
-    
+        # This will only be reached if all attempts to create a directory fail
+        raise OSError("Could not create any destination directory. Please check permissions.")
+
     def get_config_summary(self) -> Dict[str, Any]:
-        """Get a summary of current configuration"""
         return {
             'monitored_directories': self.monitored_dirs,
             'destination_directory': self.destination_dir,
             'file_categories': list(self.file_types.keys()),
-            'total_extensions': len(self.flattened_types)
+            'total_extensions': sum(len(exts) for exts in self.file_types.values())
         }
